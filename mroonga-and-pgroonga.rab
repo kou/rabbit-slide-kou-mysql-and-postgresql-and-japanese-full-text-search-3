@@ -1,0 +1,158 @@
+= Mroonga\n(('note:と'))\nPGroonga
+
+: subtitle
+   利用方法例
+: author
+   須藤功平
+: institution
+   クリアコード
+: content-source
+   MySQLとPostgreSQLと日本語全文検索
+: date
+   2016-09-29
+: allotted-time
+   20m
+: theme
+   groonga
+
+= Mroonga・PGroonga
+
+  * Mroonga（むるんが）
+    * (('wait'))MySQLに\n
+      高速日本語全文検索機能を追加する\n
+      プロダクト
+  * PGroonga（ぴーじーるんが）
+    * (('wait'))PostgreSQLに\n
+      高速日本語全文検索機能を追加する\n
+      プロダクト
+
+= 使いどころ
+
+  * Mroonga
+    * (('wait'))速さが欲しい
+    * (('wait'))トランザクションはいらない
+  * PGroonga
+    * (('wait'))機能が欲しい
+    * (('wait'))トランザクションも欲しい
+
+= 速い？
+
+  # image
+  # src = http://slide.rabbit-shocker.org/authors/kou/mysql-and-postgresql-and-japanese-full-text-search/mroonga-and-pgroonga.pdf
+  # page = 6
+  # relative_height = 80
+
+(('tag:center'))
+(('note:詳細は第1回の資料を参照'))\n
+(('note:http://slide.rabbit-shocker.org/authors/kou/mysql-and-postgresql-and-japanese-full-text-search/'))
+
+= 利用方法例
+
+  * Redmine
+    * 課題管理システム
+    * プラグイン：redmine_full_text_search
+  * Zulip
+    * チャットツール
+
+= Mroongaのモード
+
+  * ストレージモード
+    * (('wait'))ストレージとインデックスに\n
+      Groongaを使う
+  * ラッパーモード
+    * (('wait'))ストレージは\n
+      既存ストレージエンジンをラップ
+    * (('wait'))(('note:全文検索・位置情報'))インデックスだけ\n
+      Groongaを使う
+
+== スライドプロパティ
+
+: groonga-product
+
+   mroonga
+
+= Mroongaのモード
+
+  # image
+  # src = images/mroonga-mode.svg
+  # relative_height = 100
+
+== スライドプロパティ
+
+: groonga-product
+
+   mroonga
+
+= ストレージモード
+
+  * (('wait'))全文検索が速い
+  * (('wait'))それ以外の条件も速い\n
+    (('note:数値の比較とか'))
+  * (('wait'))挿入も更新も削除も速い
+  * (('wait'))ソートも速い
+  * (('wait'))トランザクションはない
+
+== スライドプロパティ
+
+: groonga-product
+
+   mroonga
+
+= ラッパーモード
+
+  * (('wait'))全文検索が速い
+  * (('wait'))全文検索以外はラップ対象の\n
+    ストレージエンジンに依存
+  * (('wait'))トランザクション
+    * ストレージのみ
+    * インデックスには効かない\n
+      (('note:ロールバックしたらインデックスの再構築が必要'))
+
+== スライドプロパティ
+
+: groonga-product
+
+   mroonga
+
+= 使い分け
+
+  * (('wait'))できればストレージモード
+  * (('wait'))ムリならラッパーモード
+
+== スライドプロパティ
+
+: groonga-product
+
+   mroonga
+
+= ストレージモードの条件
+
+  * (('wait'))(({NULL}))がないこと
+    * あるならテーブルをわけるか\n
+      ラッパーモード
+  * (('wait'))トランザクションを使わない
+    * 例：追記のみ（ログとか）
+    * 例：同時に更新されない
+    * 例：スレーブにする（後述）
+
+== スライドプロパティ
+
+: groonga-product
+
+   mroonga
+
+= オススメの使い方
+
+  * (('wait'))テーブル定義
+    * デフォルトで使う(('note:（いい感じになる）'))
+    * カスタマイズは慣れてからで十分
+  * (('wait'))検索
+    * (({IN BOOLEAN MODE}))を使う(('note:（いつもの検索）'))
+    * (({*D+}))プラグマを使う(('note:（デフォルトAND）'))
+
+== スライドプロパティ
+
+: groonga-product
+
+   mroonga
+
