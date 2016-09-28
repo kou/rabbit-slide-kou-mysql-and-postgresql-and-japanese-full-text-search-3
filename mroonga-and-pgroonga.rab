@@ -26,16 +26,7 @@
       高速日本語全文検索機能を追加する\n
       プロダクト
 
-= 使いどころ
-
-  * Mroonga
-    * (('wait'))速さが欲しい
-    * (('wait'))トランザクションはいらない
-  * PGroonga
-    * (('wait'))機能が欲しい
-    * (('wait'))トランザクションも欲しい
-
-= 速い？
+= 高速？
 
   # image
   # src = http://slide.rabbit-shocker.org/authors/kou/mysql-and-postgresql-and-japanese-full-text-search/mroonga-and-pgroonga.pdf
@@ -48,34 +39,42 @@
 
 = 利用方法例
 
+既存システムへの組込方法を紹介
+
   * Redmine
     * 課題管理システム
-    * プラグイン：redmine_full_text_search
+    * Ruby on Redmineを使用
   * Zulip
     * チャットツール
+    * Djangoを使用
 
-= Mroongaのモード
-
-  * ストレージモード
-    * (('wait'))ストレージとインデックスに\n
-      Groongaを使う
-  * ラッパーモード
-    * (('wait'))ストレージは\n
-      既存ストレージエンジンをラップ
-    * (('wait'))(('note:全文検索・位置情報'))インデックスだけ\n
-      Groongaを使う
-
-== スライドプロパティ
-
-: groonga-product
-
-   mroonga
-
-= Mroongaのモード
+= Redmine
 
   # image
-  # src = images/mroonga-mode.svg
-  # relative_height = 100
+  # src = images/redmine-full-text-search-form.png
+  # relative_width = 100
+
+= 全文検索プラグイン
+
+GitHub: (('tag:x-small:okkez/redmine_full_text_search'))
+
+  * MySQL・PostgreSQL両方対応
+    * MySQLのときはMroongaを利用
+    * PostgreSQLのときはPGroongaを利用
+
+= 速さ
+
+(('tag:center'))
+MySQL + Mroongaのケース
+
+  # RT
+  delimiter = [|]
+
+  プラグイン | チケット数 | 時間
+
+  なし | 約3000件 | 467ms
+  あり | 約3000件 | 93ms
+  あり | 約200万件 | 380ms
 
 == スライドプロパティ
 
@@ -83,30 +82,13 @@
 
    mroonga
 
-= ストレージモード
+= 速さ：コメント
 
-  * (('wait'))全文検索が速い
-  * (('wait'))それ以外の条件も速い\n
-    (('note:数値の比較とか'))
-  * (('wait'))挿入も更新も削除も速い
-  * (('wait'))ソートも速い
-  * (('wait'))トランザクションはない
+  # image
+  # src = images/redmine-full-text-search-plugin-report.png
+  # relative_height = 85
 
-== スライドプロパティ
-
-: groonga-product
-
-   mroonga
-
-= ラッパーモード
-
-  * (('wait'))全文検索が速い
-  * (('wait'))全文検索以外はラップ対象の\n
-    ストレージエンジンに依存
-  * (('wait'))トランザクション
-    * ストレージのみ
-    * インデックスには効かない\n
-      (('note:ロールバックしたらインデックスの再構築が必要'))
+(('note:https://twitter.com/akahane92/status/733832496945594368'))
 
 == スライドプロパティ
 
@@ -114,41 +96,27 @@
 
    mroonga
 
-= 使い分け
+= 使いどころ
 
-  * (('wait'))できればストレージモード
-  * (('wait'))ムリならラッパーモード
+  * Mroonga
+    * (('wait'))速さが欲しい
+    * (('wait'))トランザクションはいらない
+  * PGroonga
+    * (('wait'))機能が欲しい
+    * (('wait'))トランザクションも欲しい
 
-== スライドプロパティ
+= Redmine
 
-: groonga-product
+  * トランザクション必須
+    * Mroongaを使うときは一工夫必要
+    * PGroongaはそのままで大丈夫
 
-   mroonga
+= Redmine+Mroonga：方針
 
-= ストレージモードの条件
-
-  * (('wait'))(({NULL}))がないこと
-    * あるならテーブルをわけるか\n
-      ラッパーモード
-  * (('wait'))トランザクションを使わない
-    * 例：追記のみ（ログとか）
-    * 例：同時に更新されない
-    * 例：スレーブにする（後述）
-
-== スライドプロパティ
-
-: groonga-product
-
-   mroonga
-
-= オススメの使い方
-
-  * (('wait'))テーブル定義
-    * デフォルトで使う(('note:（いい感じになる）'))
-    * カスタマイズは慣れてからで十分
-  * (('wait'))検索
-    * (({IN BOOLEAN MODE}))を使う(('note:（いつもの検索）'))
-    * (({*D+}))プラグマを使う(('note:（デフォルトAND）'))
+  * (('wait'))チケットテーブルは変えない
+  * (('wait'))全文検索用テーブルは別途作成
+  * (('wait'))全文検索用テーブルから\n
+    チケットテーブルを参照
 
 == スライドプロパティ
 
@@ -156,3 +124,197 @@
 
    mroonga
 
+= マイグレーション
+
+  # coderay ruby
+
+  def up
+    create_table(:fts_issues,
+                 id: false, # idは有効・無効どっちでも可
+                 options: "ENGINE=Mroonga") do |t|
+      t.belongs_to :issue, index: true, null: false
+      t.string :subject, default: "", null: false
+      t.text :description, limit: 65535, null: false
+    end
+    execute("INSERT INTO " +
+              "fts_issues(issue_id, subject, description) " +
+              "SELECT id, subject, description FROM issues;")
+    add_index(:fts_issues, [:subject, :description],
+              type: "fulltext") # 静的インデックス構築（速い）
+  end
+
+== スライドプロパティ
+
+: groonga-product
+
+   mroonga
+
+= モデル
+
+  # coderay ruby
+
+  class FtsIssue < ActiveRecord::Base
+    # 実際はissue_idカラムは主キーではない。
+    # 主キーなしのテーブルなので
+    # Active Recordをごまかしているだけ。
+    self.primary_key = :issue_id
+    belongs_to :issue
+  end
+
+== スライドプロパティ
+
+: groonga-product
+
+   mroonga
+
+= 保存
+
+  # coderay ruby
+
+  class Issue
+    # この後にロールバックされることがあるのでカンペキではない
+    # 再度同じチケットを更新するかデータを入れ直せば直る
+    after_safe do |record|
+      fts_record =
+        FtsIssue.find_or_initialize_by(issue_id: record.id)
+      fts_record.subject     = record.subject
+      fts_record.description = record.description
+      fts_record.save!
+    end
+  end
+
+== スライドプロパティ
+
+: groonga-product
+
+   mroonga
+
+= 全文検索
+
+  # coderay ruby
+
+  issue.
+    joins(:fts_issue).
+    where(["MATCH(fts_issues.subject, " +
+                 "fts_issues.description) " +
+            "AGAINST (? IN BOOLEAN MODE)",
+           # ↓デフォルトANDで全文検索
+           "*D+ #{keywords.join(', ')}"])
+
+== スライドプロパティ
+
+: groonga-product
+
+   mroonga
+
+= Redmine+Mroonga：まとめ
+
+  * (('wait'))トランザクション必須
+    * 元テーブルを置き換えない
+    * 全文検索用テーブルを作成
+  * (('wait'))データ
+    * アプリが複数テーブルに保存
+  * (('wait'))全文検索
+    * ((*JOIN*))して((*MATCH AGAINST*))
+
+== スライドプロパティ
+
+: groonga-product
+
+   mroonga
+
+= Redmine+PGroonga：方針
+
+  * (('wait'))全文検索用インデックス作成
+  * (('wait'))インデックスに主キーを含める
+    * 検索スコアーを取得するため
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= マイグレーション
+
+  # coderay ruby
+
+  def up
+    enable_extension("pgroonga")
+    add_index(:issues,
+              [:id, :subject, :description],
+              using: "pgroonga")
+  end
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= モデル
+
+追加・変更なし
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= 保存
+
+追加・変更なし
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= 全文検索
+
+  # coderay ruby
+
+  issue.
+    # 検索対象のカラムごとに
+    # クエリーを指定
+    where(["subject @@ ? OR " +
+           "description @@ ?",
+           keywords.join(", "),
+           keywords.join(", ")])
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= Redmine+PGroonga：まとめ
+
+  * (('wait'))インデックス追加のみでOK
+    * トランザクション対応
+    * データ保存も変更なし
+  * (('wait'))全文検索
+
+      # coderay sql
+      カラム1 @@ 'クエリー' OR
+      カラム2 @@ 'クエリー' OR ...
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= Redmine：まとめ
+
+  * (('wait'))速い！
+  * (('wait'))Mroonga
+    * 全文検索用テーブルで実現
+  * (('wait'))PGroonga
+    * 全文検索用インデックスで実現
+
+= Zulip
+
+TODO
