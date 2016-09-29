@@ -43,7 +43,7 @@
 
   * Redmine
     * チケット管理システム
-    * Ruby on Redmineを使用
+    * Ruby on Railsを使用
   * Zulip
     * チャットツール
     * Djangoを使用
@@ -174,7 +174,7 @@ MySQL + Mroongaのケース
   class Issue
     # この後にロールバックされることがあるのでカンペキではない
     # 再度同じチケットを更新するかデータを入れ直せば直る
-    after_safe do |record|
+    after_save do |record|
       fts_record =
         FtsIssue.find_or_initialize_by(issue_id: record.id)
       fts_record.subject     = record.subject
