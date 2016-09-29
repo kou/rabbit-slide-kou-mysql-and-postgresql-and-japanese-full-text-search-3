@@ -1,7 +1,7 @@
 = Mroonga\n(('note:と'))\nPGroonga
 
 : subtitle
-   利用方法例
+   導入方法例
 : author
    須藤功平
 : institution
@@ -37,12 +37,12 @@
 (('note:詳細は第1回の資料を参照'))\n
 (('note:http://slide.rabbit-shocker.org/authors/kou/mysql-and-postgresql-and-japanese-full-text-search/'))
 
-= 利用方法例
+= 導入方法例
 
-既存システムへの組込方法を紹介
+既存システムへの導入方法を紹介
 
   * Redmine
-    * 課題管理システム
+    * チケット管理システム
     * Ruby on Redmineを使用
   * Zulip
     * チャットツール
@@ -114,7 +114,7 @@ MySQL + Mroongaのケース
 = Redmine+Mroonga：方針
 
   * (('wait'))チケットテーブルは変えない
-  * (('wait'))全文検索用テーブルは別途作成
+  * (('wait'))全文検索用テーブルを別途作成
   * (('wait'))全文検索用テーブルから\n
     チケットテーブルを参照
 
@@ -129,14 +129,14 @@ MySQL + Mroongaのケース
   # coderay ruby
 
   def up
-    create_table(:fts_issues,
+    create_table(:fts_issues, # 全文検索用テーブル作成
                  id: false, # idは有効・無効どっちでも可
                  options: "ENGINE=Mroonga") do |t|
       t.belongs_to :issue, index: true, null: false
       t.string :subject, default: "", null: false
       t.text :description, limit: 65535, null: false
     end
-    execute("INSERT INTO " +
+    execute("INSERT INTO " + # データをコピー
               "fts_issues(issue_id, subject, description) " +
               "SELECT id, subject, description FROM issues;")
     add_index(:fts_issues, [:subject, :description],
@@ -317,4 +317,336 @@ MySQL + Mroongaのケース
 
 = Zulip
 
-TODO
+  # image
+  # src = images/zulip-full-text-search-form.png
+  # relative_height = 95
+
+= Zulipの全文検索機能
+
+  * (('wait'))現在：textsearch
+    * PostgreSQL標準機能
+    * 英語のみ対応
+  * (('wait'))NEW!：PGroonga
+    * オプション（＝PGroongaに切替可）
+    * 全言語対応（日本語を含む）
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= Zulip+PGroonga：方針
+
+  * 書き込み速度を落とさない
+    * チャットは書き込みが遅いと微妙
+    * インデックスは裏で更新\n
+      (('note:PGroongaならリアルタイム更新でも大丈夫かも'))
+
+(('note:詳細：https://github.com/zulip/zulip/pull/700/files'))
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= マイグレーション
+
+  # coderay python
+
+  migrations.RunSQL("""
+  ALTER ROLE zulip SET search_path
+    TO zulip,public,pgroonga,pg_catalog;
+  ALTER TABLE zerver_message
+    ADD COLUMN search_pgroonga text;
+  UPDATE zerver_message SET search_pgroonga =
+    subject || ' ' || rendered_content;
+  CREATE INDEX pgrn_index ON zerver_message
+    USING pgroonga(search_pgroonga);
+  """, "...")
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= 遅延インデックス更新
+
+  * メッセージ追加・更新時にログ
+  * 別プロセスでログを監視
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= 追加・更新時にログ
+
+  # coderay sql
+
+  CREATE FUNCTION append_to_fts_update_log()
+    RETURNS trigger
+    LANGUAGE plpgsql AS $$
+      BEGIN
+        INSERT INTO fts_update_log (message_id)
+          VALUES (NEW.id);
+        RETURN NEW;
+      END
+    $$;
+  CREATE TRIGGER update_fts_index_async
+    BEFORE INSERT OR UPDATE OF
+      subject, rendered_content ON zerver_message
+    FOR EACH ROW
+      EXECUTE PROCEDURE append_to_fts_update_log();
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= 別プロセスに通知
+
+  # coderay sql
+
+  CREATE FUNCTION do_notify_fts_update_log()
+    RETURNS trigger
+    LANGUAGE plpgsql AS $$
+      BEGIN
+        NOTIFY fts_update_log;
+        RETURN NEW;
+      END
+    $$;
+  CREATE TRIGGER fts_update_log_notify
+    AFTER INSERT ON fts_update_log
+    FOR EACH STATEMENT
+      EXECUTE PROCEDURE do_notify_fts_update_log();
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= インデックス更新プロセス
+
+  # coderay python
+
+  import psycopg2
+  conn = psycopg2.connect("user=zulip")
+  cursor = conn.cursor
+  cursor.execute("LISTEN fts_update_log;")
+  while True:
+      if select.select([conn], [], [], 30) != ([], [], []):
+          conn.poll()
+          while conn.notifies:
+              conn.notifies.pop()
+              update_fts_columns(cursor)
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= インデックス更新
+
+  # coderay python
+
+  def update_fts_columns(cursor):
+      cursor.execute("SELECT id, message_id "
+                     "FROM fts_update_log;")
+      ids = []
+      for (id, message_id) in cursor.fetchall():
+          cursor.execute("UPDATE zerver_message SET "
+                         "search_pgroonga = "
+                         "subject || ' ' || rendered_content "
+                         "WHERE id = %s", (message_id,))
+          ids.append(id)
+      cursor.execute("DELETE FROM fts_update_log "
+                     "WHERE id = ANY(%s)", (ids,))
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= 全文検索
+
+  # coderay python
+
+  from sqlalchemy.sql import column
+  def _by_search_pgroonga(self, query, operand):
+      # WHERE search_pgroonga @@ 'クエリー'
+      target = column("search_pgroonga")
+      condition = target.op("@@")(operand)
+      return query.where(condition)
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= ハイライト
+
+  # image
+  # src = images/zulip-highlight.png
+  # relative_height = 95
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= ハイライト：SQL
+
+  # coderay sql
+
+  SELECT
+   pgroonga.match_positions_byte(
+     rendered_content,
+     pgroonga.query_extract_keywords('クエリー'))
+     AS content_matches,
+   pgroonga.match_positions_byte(
+     subject,
+     pgroonga.query_extract_keywords('クエリー'))
+     AS subject_matches
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= ハイライト：SQLAlchemy
+
+  # coderay python
+
+  from sqlalchemy import func
+  def _by_search_pgroonga(self, query, operand):
+      match_positions_byte = func.pgroonga.match_positions_byte
+      query_extract_keywords = func.pgroonga.query_extract_keywords
+      keywords = query_extract_keywords(operand)
+      query = query.column(
+        match_positions_byte(column("rendered_content"),
+                             keywords).label("content_matches"))
+      query = query.column(
+        match_positions_byte(column("subject"),
+                             keywords).label("subject_matches"))
+      # ...
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= ハイライト：Python
+
+  # coderay python
+
+  def highlight_string_bytes_offsets(text, locs):
+      # type: (AnyStr, Iterable[Tuple[int, int]]) -> text_type
+      string = text.encode('utf-8')
+      highlight_start = b'<span class="highlight">'
+      highlight_stop = b'</span>'
+      pos = 0
+      result = b''
+      for loc in locs:
+          (offset, length) = loc
+          result += string[pos:offset]
+          result += highlight_start
+          result += string[offset:offset + length]
+          result += highlight_stop
+          pos = offset + length
+      result += string[pos:]
+      return result.decode('utf-8')
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= ハイライト：補足
+
+  * 通常はハイライト関数で十分
+    * (({pgroonga.highlight_html}))
+  * ただし(({ts_headline}))では不十分
+    * HTML出力に使えない
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= ハイライト：ts_headline
+
+  # coderay sql
+
+  SELECT
+    ts_headline('english',
+                'PostgreSQL <is> great!',
+                to_tsquery('PostgreSQL'),
+                'HighlightAll=TRUE');
+  --           ts_headline          
+  -- -------------------------------
+  --  <b>PostgreSQL</b> <is> great!
+  -- (1 row)  不正なHTML↑
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= ハイライト：pgroonga.highlight_html
+
+  # coderay sql
+
+  SELECT
+    pgroonga.highlight_html(
+      'PostgreSQL <is> great!',
+      pgroonga.query_extract_keywords('PostgreSQL'));
+  --              highlight_html             
+  -- ----------------------------------------
+  --  <span class="keyword">PostgreSQL</span>
+  --     &lt;is&gt; great!
+  --     ↑     ↑HTMLエスケープされている
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= Zulip：まとめ
+
+  * (('wait'))全言語対応全文検索
+    * textsearch（1言語のみ）→\n
+      PGroonga（全言語）
+  * (('wait'))書き込み性能は維持
+    * 遅延インデックス更新
+
+== スライドプロパティ
+
+: groonga-product
+
+   pgroonga
+
+= まとめ
+
+  * (('wait'))Mroonga・PGroongaの\n
+    導入方法を実例ベースで紹介
+    * Redmine：チケット管理システム
+    * Zulip：チャットツール
+  * (('wait'))トランザクション必須の場合
+    * Mroonga：別テーブル作成
+    * PGroonga：インデックス追加
