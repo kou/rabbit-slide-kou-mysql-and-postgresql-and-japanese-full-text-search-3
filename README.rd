@@ -1,6 +1,6 @@
-= Mroonga・PGroonga利用方法
+= Mroonga・PGroonga導入方法
 
-Mroonga・PGroongaをさわり始めた人向けにMroonga・PGroongaを利用する方法を具体的な事例を使いながら紹介します。
+既存のアプリケーションにMroonga・PGroongaを導入する方法を具体的な事例を使いながら紹介します。
 
 == ライセンス
 
